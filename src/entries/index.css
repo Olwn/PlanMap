@@ -1,0 +1,55 @@
+html, body {
+ height: 100%;
+}
+body {
+  padding: 1px;
+  background-color: #F6F6F6;
+  box-sizing: border-box;
+}
+.split {
+  -webkit-box-sizing: border-box;
+     -moz-box-sizing: border-box;
+          box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.gutter {
+  background-color: #FFF;
+  background-repeat: no-repeat;
+  background-position: 50%;
+}
+.gutter.gutter-horizontal {
+  cursor: col-resize;
+  /*background-image: url('../images/vertical.png');*/
+}
+.gutter.gutter-vertical {
+  cursor: row-resize;
+  /*background-image: url('../images/horizontal.png');*/
+}
+#map, #table, .gutter.gutter-horizontal{
+  height: 100%;
+  float: left;
+}
+.ant-table-footer{
+  text-align: center;
+  font-size: 15px;
+}
+#export, #import, #add{
+  margin: 10px 15px 15px 15px
+}
+
+.ant-input {
+  width: 70px;
+  margin: 0 8px 8px 0;
+}
+.ant-input-number {
+  width: 50px;
+  margin: 0 8px 8px 0;
+  text-align: center;
+  vertical-align: middle;
+}
+.ant-tag {
+  width: 40px;
+  text-align: center;
+  margin: 0 8px 8px 0;
+}
