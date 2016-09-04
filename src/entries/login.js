@@ -26,13 +26,13 @@ const openNotification = function (status) {
     description: description
   });
 };
-const host = "http://127.0.0.1:5000"
+
 let Demo = React.createClass({
   handleSubmit(e) {
     e.preventDefault();
     console.log('收到表单值：', this.props.form.getFieldsValue());
     //$(document).load('/login', JSON.stringify(this.props.form.getFieldsValue()));
-    $.post(host+'/login', this.props.form.getFieldsValue(),
+    $.post('/login', this.props.form.getFieldsValue(),
       function(data, status){
         openNotification(data['status']);
         if(data['status'] == 1)
