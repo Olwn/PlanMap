@@ -278,4 +278,5 @@ ReactDOM.render(
     <Tag style={{width: '50px'}}>Rc</Tag>
   </div>), document.getElementById("title")
   );
+ReactDOM.render(<PointList data={[]} />, document.getElementById('points'));
 ReactDOM.render(<ConfigSelect />, document.getElementById('select'));
