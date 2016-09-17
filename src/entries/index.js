@@ -85,6 +85,7 @@ var PointList = React.createClass({
       ra: 1,
       rb: 1,
       rc: 1,
+      name: '',
       show: true
     };
     this.setState({
