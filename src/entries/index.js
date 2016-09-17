@@ -242,6 +242,7 @@ function renderPoints(cid) {
     var pointss = result.points.sort(function(a, b) {
       return a.idx - b.idx;
     });
+    window.map.clearOverlays();
     console.log('rendering poitns');
     ReactDOM.render(<PointList data={pointss} />, document.getElementById('points'));
   });
