@@ -5,7 +5,7 @@ from flask import Flask
 from flask import request, render_template, send_from_directory, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_sse import sse
-import flask.ext.login as flask_login
+import flask_login
 from flask_cors import CORS, cross_origin
 import hashlib
 import json
@@ -18,7 +18,7 @@ app.config["REDIS_URL"] = "redis://localhost:6379"
 app.register_blueprint(sse, url_prefix='/stream')
 app.config['SECRET_KEY'] = "123456789"
 # database config
-host = 'ec2-54-199-158-232.ap-northeast-1.compute.amazonaws.com'
+host = '106.14.63.93'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root:27271992@'+host+':3306/map'
 db = SQLAlchemy(app)
@@ -46,7 +46,7 @@ class Config(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50))
     uid = db.Column(db.Integer, db.ForeignKey('user.id'))
-    points = db.relationship('Point', backref='config')
+    points = db.relationship('Point', backref='config',  passive_deletes=True)
     def __init__(self, config_name, uid):
         self.name = config_name
         self.uid = uid
@@ -56,7 +56,7 @@ class Config(db.Model):
 
 class Point(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    cid = db.Column(db.Integer, db.ForeignKey('config.id'))
+    cid = db.Column(db.Integer, db.ForeignKey('config.id', ondelete='CASCADE'))
     lat = db.Column(db.Float)
     lng = db.Column(db.Float)
     ra = db.Column(db.Float)
@@ -101,8 +101,6 @@ def authenticate(name, password):
         return False
     else:
         md5.update(password)
-        print password
-        print md5.hexdigest(), user.password
         is_auth = md5.hexdigest() == user.password
         is_auth = True
         if is_auth:
@@ -129,7 +127,6 @@ def login():
 @app.route('/index', methods=['GET'])
 @flask_login.login_required
 def index():
-    print flask_login.current_user.username
     return render_template('index.html')
 
 # use requests to use baidu api
@@ -251,12 +248,10 @@ def batch():
 
 @app.route('/save', methods=['POST'])
 @flask_login.login_required
-def save_refer():
+def save_config():
     refer_name = request.form['name']
     points = json.loads(request.form['points'])
     userid = flask_login.current_user.id
-    # userid = 1;
-    print refer_name, userid
     config = Config(refer_name, userid)
     db.session.add(config)
     db.session.commit()
@@ -265,6 +260,15 @@ def save_refer():
         point = Point(config.id, p['lat'], p['lng'],
             p['ra'], p['rb'], p['rc'], i, p['name'])
         db.session.add(point)
+    db.session.commit()
+    return 'success', 200
+
+@app.route('/delete', methods=['GET'])
+@flask_login.login_required
+def delete_config():
+    config_id = request.args["config_id"]
+    config_delete = Config.query.filter_by(id=config_id).one()
+    db.session.delete(config_delete)
     db.session.commit()
     return 'success', 200
 
@@ -283,7 +287,6 @@ def get_config():
 def get_point():
     cid = request.args['cid']
     points = Point.query.filter_by(cid=cid).all()
-    print points
     ret = []
     for p in points:
         ret.append({

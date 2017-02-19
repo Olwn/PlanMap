@@ -6,16 +6,30 @@ import {Icon, Upload, message, InputNumber, Input, Row, Col, Tag, Select, Button
 const InputGroup = Input.Group;
 const Option = Select.Option;
 import Split from 'split.js';
-
-window.map = new BMap.Map("map");
-window.map.centerAndZoom(new BMap.Point(121.492, 31.245), 14);
-
 Split(['#map', '#table'], {
-    sizes: [50, 50],
+    sizes: [60, 40],
     gutterSize: 8,
     cursor: 'col-resize',
     minSize: 400
 });
+
+window.map = new BMap.Map("map");
+window.map.centerAndZoom(new BMap.Point(121.492, 31.245), 14);
+window.map.enableScrollWheelZoom();
+window.map.enableInertialDragging();
+window.map.enableContinuousZoom();
+
+var top_right_navigation = new BMap.NavigationControl({
+    anchor: BMAP_ANCHOR_TOP_RIGHT,
+    type: BMAP_NAVIGATION_CONTROL_SMALL});
+var cityListControl = new BMap.CityListControl({
+    anchor: BMAP_ANCHOR_TOP_LEFT,
+    offset: new BMap.Size(10, 20)});
+window.map.addControl(top_right_navigation);
+window.map.addControl(cityListControl);
+window.cid = -1;
+map.basicMarker = null;
+
 
 var upload_props = {
     name: 'file',
@@ -39,7 +53,7 @@ var upload_props = {
 
 var PointList = React.createClass({
   getInitialState() {
-    window.map.addEventListener("click", this.addPoint);
+    window.map.addEventListener("click", this.addReferPoint);
     console.log("init");
     var max_idx = -1;
     var fields = {};
@@ -55,9 +69,41 @@ var PointList = React.createClass({
     });
     return {
       points: fields,
+      basic: null,
       max_idx: max_idx,
-      data_for_upload: {}
+      data_for_upload: {},
+      config_id: -1,
+      configs: []
     };
+  },
+  componentDidMount() {
+    this.getNewConfig();
+    console.log("componentDidMount");
+  },
+  getNewConfig() {
+    $.get('/configs', function (result) {
+      this.setState({
+        configs: result['configs']
+      });
+    }.bind(this));
+  },
+  changeClickListener(mode) {
+    switch(mode)
+    {
+      case "1":
+        window.map.removeEventListener("click", this.addBasicPoint);
+        window.map.addEventListener("click", this.addReferPoint);
+        break;
+      case "2":
+      window.map.removeEventListener("click", this.addReferPoint);
+        window.map.addEventListener("click", this.addBasicPoint);
+        break;
+      case "3":
+        window.map.addEventListener("click", function(x) {});
+        break;
+      default:
+        break;
+    }
   },
   componentWillReceiveProps(nextProps) {
     var max_idx = -1;
@@ -76,7 +122,7 @@ var PointList = React.createClass({
     });
     console.log("componentWillReceiveProps");
   },
-  addPoint(e){
+  addReferPoint(e){
     const new_idx = this.state.max_idx + 1;
     this.state.points[String(new_idx)] = {
       idx: new_idx,
@@ -91,6 +137,11 @@ var PointList = React.createClass({
     this.setState({
       max_idx: new_idx,
       points: this.state.points
+    });
+  },
+  addBasicPoint(e){
+    this.setState({
+      basic: e.point
     });
   },
   onChangeValue(id, propertyName, value) {
@@ -110,9 +161,13 @@ var PointList = React.createClass({
     });
   },
   prepareData() {
+    var new_upload = {};
     for(var key in this.state.points){
       const p = this.state.points[key];
-      this.state.data_for_upload[key] = {
+      if (p.show == false){
+        continue;
+      }
+      new_upload[key] = {
         'idx': p.idx,
         'name': p.name,
         'lat': p.lat,
@@ -122,16 +177,29 @@ var PointList = React.createClass({
         'rc': p.rc
       }
     }
+    this.state.data_for_upload = new_upload;
     this.forceUpdate();
   },
-  onClick() {
+
+  onClickSave() {
     this.prepareData();
     $.post('/save',
     {'name': this.state.name, 'points': JSON.stringify(this.state.data_for_upload)},
     function(data, status){
       console.log(status);
-    }
+      this.getNewConfig();
+    }.bind(this)
   );
+  },
+  onClickDelete() {
+    $.get('/delete',
+      {'config_id': window.cid},
+        function(data, status){
+          this.getNewConfig();
+          ReactDOM.render(<PointList data={[]} />, document.getElementById('points'));
+        }.bind(this)
+      );
+
   },
   render: function() {
     var keys = [];
@@ -155,18 +223,42 @@ var PointList = React.createClass({
         );
       }
     }
+    var width_style = {width: 60};
     return (
       <div>
-        <div className="pointList">{pointNodes}</div>
         <div>
-          <Input onChange={this.configNameChange}/>
-          <Button type="primary" onClick={this.onClick}>Save</Button>
-          <Upload data={{"points": JSON.stringify(this.state.data_for_upload)}} {...upload_props}>
+          <Select defaultValue="1" style={{ width: 60 }} onChange={this.changeClickListener}>
+            <Option value="1">参考点</Option>
+            <Option value="2">基点</Option>
+            <Option value="3">禁用</Option>
+          </Select>
+          <Select style={width_style} onChange={renderPoints}>
+            {
+              this.state.configs.map(function(config){
+                return <Option value={String(config.id)} key={config.id}>{config.name}</Option>
+              })
+            }
+          </Select>
+
+          <Upload style={width_style} data={{"points": JSON.stringify(this.state.data_for_upload)}} {...upload_props}>
             <Button id="import" type="ghost" onClick={this.prepareData}>
               <Icon type="upload" />导入
             </Button>
-        </Upload>
+          </Upload>
         </div>
+        <div>
+          <Tag style={{width: '40px'}}>ID</Tag>
+          <Tag style={{width: '70px'}}>Name</Tag>
+          <Tag style={{width: '70px'}}>Lat</Tag>
+          <Tag style={{width: '70px'}}>Lng</Tag>
+          <Tag style={{width: '50px'}}>Ra</Tag>
+          <Tag style={{width: '50px'}}>Rb</Tag>
+          <Tag style={{width: '50px'}}>Rc</Tag>
+        </div>
+        <div className="pointList">{pointNodes}</div>
+        <Input style={width_style} onChange={this.configNameChange}/>
+        <Button style={width_style} type="primary" onClick={this.onClickSave}>Save</Button>
+        <Button style={width_style} type="primary" onClick={this.onClickDelete}>Delete</Button>
       </div>
     );
   }
@@ -209,35 +301,29 @@ var Point = React.createClass({
   }
 });
 
-const ConfigSelect = React.createClass({
-  getInitialState: function() {
-    return {
-      configs: []
-    }
-  },
-  componentWillMount: function() {
-    this.serverRequest = $.get('/configs', function (result){
-      this.setState({
-        configs: result['configs']
+function renderConfigSelect() {
+  $.get('/configs', function (result){
+      var ConfigSelect = React.createClass({
+        render() {
+          return(
+            <div>
+              <Select style={{width: 100}} onChange={renderPoints}>
+                {
+                  result['configs'].map(function(config){
+                    return <Option value={String(config.id)} key={config.id}>{config.name}</Option>
+                  })
+                }
+              </Select>
+            </div>
+          );
+        }
       });
-    }.bind(this));
-  },
-  render: function() {
-    return (
-      <div>
-        <Select style={{width: 100}} onChange={renderPoints}>
-          {
-            this.state.configs.map(function(config){
-              return <Option value={String(config.id)} key={config.id}>{config.name}</Option>
-            })
-          }
-        </Select>
-      </div>
-    );
-  }
-});
+      ReactDOM.render(<ConfigSelect />, document.getElementById('select'));
 
+  });
+}
 function renderPoints(cid) {
+  window.cid = cid;
   $.get('/points?cid='+cid, function(result) {
     var pointss = result.points.sort(function(a, b) {
       return a.idx - b.idx;
@@ -269,16 +355,5 @@ source.addEventListener('report', function(event) {
     ReactDOM.render(<Progress percent={data.progress} />, document.getElementById("progress"));
 }, false);
 
-ReactDOM.render(
-  (<div>
-    <Tag style={{width: '40px'}}>ID</Tag>
-    <Tag style={{width: '70px'}}>Name</Tag>
-    <Tag style={{width: '70px'}}>Lat</Tag>
-    <Tag style={{width: '70px'}}>Lng</Tag>
-    <Tag style={{width: '50px'}}>Ra</Tag>
-    <Tag style={{width: '50px'}}>Rb</Tag>
-    <Tag style={{width: '50px'}}>Rc</Tag>
-  </div>), document.getElementById("title")
-  );
-ReactDOM.render(<PointList data={[]} />, document.getElementById('points'));
-ReactDOM.render(<ConfigSelect />, document.getElementById('select'));
+ReactDOM.render(<PointList data={[]}/>, document.getElementById('points'));
+//renderConfigSelect();
