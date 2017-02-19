@@ -28,7 +28,7 @@ var cityListControl = new BMap.CityListControl({
 window.map.addControl(top_right_navigation);
 window.map.addControl(cityListControl);
 window.cid = -1;
-map.basicMarker = null;
+map.basic_marker = null;
 
 
 var upload_props = {
@@ -68,6 +68,7 @@ var PointList = React.createClass({
       fields[String(x.idx)] = x;
     });
     return {
+      mode: "1",
       points: fields,
       basic: null,
       max_idx: max_idx,
@@ -87,23 +88,31 @@ var PointList = React.createClass({
       });
     }.bind(this));
   },
-  changeClickListener(mode) {
-    switch(mode)
+  changeClickListener(m) {
+    switch(this.state.mode)
     {
       case "1":
+        window.map.removeEventListener("click", this.addReferPoint);
+        break;
+      case "2":
         window.map.removeEventListener("click", this.addBasicPoint);
+      default:
+        break;
+    }
+    switch(m)
+    {
+      case "1":
         window.map.addEventListener("click", this.addReferPoint);
         break;
       case "2":
-      window.map.removeEventListener("click", this.addReferPoint);
         window.map.addEventListener("click", this.addBasicPoint);
-        break;
-      case "3":
-        window.map.addEventListener("click", function(x) {});
         break;
       default:
         break;
     }
+    this.setState({
+      mode: m
+    });
   },
   componentWillReceiveProps(nextProps) {
     var max_idx = -1;
@@ -140,6 +149,16 @@ var PointList = React.createClass({
     });
   },
   addBasicPoint(e){
+    if (map.basic_marker)
+    {
+      map.removeOverlay(map.basic_marker);
+    }
+    var bd_point = new BMap.Point(e.point.lng, e.point.lat);
+  	var marker = new BMap.Marker(bd_point);
+    var label = new BMap.Label("基点", {offset: new BMap.Size(20,-10)});
+  	window.map.addOverlay(marker);
+    marker.setLabel(label);
+    map.basic_marker = marker;
     this.setState({
       basic: e.point
     });
