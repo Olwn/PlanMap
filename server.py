@@ -135,6 +135,7 @@ def baidu_route(origin, destination, mode):
     pass
 
 def baidu_direction(origin, destination, mode):
+    print "baidu direction %s -> %s" % (origin, destination)
     params={
         'origin': origin,
         'destination': destination,
@@ -184,7 +185,7 @@ def compute(points, basic):
         total = 0
     else:
         total = total / total_c
-
+    print times_drive
     return total, times_drive, times_bus
 
 @app.route('/export', methods=['POST'])
@@ -228,6 +229,7 @@ def batch():
         basic = {'lat': r[0].value, 'lng': r[1].value}
         score, t_drive, t_bus = compute(points, basic)
         ws.append((basic['lat'], basic['lng'], score)+tuple(t_drive)+tuple(t_bus))
+	print (idx+1)/len(st.rows[1:])*100
         sse.publish({"progress": (idx+1)/len(st.rows[1:])*100}, type="report")
     file_name = file_prefix + datetime.now().strftime(' %Y-%m-%d %H:%M:%S') + '.xlsx'
     wb_result.save(filename='./files/' + file_name)
@@ -294,7 +296,7 @@ def download():
     if request.args.has_key('file'):
         file_name = request.args['file']
         return flask.send_from_directory('files', file_name,
-            cache_timeout=1, attachment_filename=file_name, as_attachment=True), 200
+    cache_timeout=1, attachment_filename=file_name, as_attachment=True), 200
     else:
         return 'no file specifid', 400
 
