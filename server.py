@@ -10,6 +10,7 @@ from flask_cors import CORS, cross_origin
 import hashlib
 import json
 import requests
+from datetime import datetime
 from openpyxl import Workbook, load_workbook
 
 app = Flask(__name__)
@@ -134,6 +135,7 @@ def baidu_route(origin, destination, mode):
     pass
 
 def baidu_direction(origin, destination, mode):
+    print "baidu direction %s -> %s" % (origin, destination)
     params={
         'origin': origin,
         'destination': destination,
@@ -145,7 +147,11 @@ def baidu_direction(origin, destination, mode):
         'ak': 'E8k0hkMHteAkrUj9ZXkAARzh'
     }
     baidu_url = 'http://api.map.baidu.com/direction/v1'
-    ret = requests.get(url=baidu_url, params = params)
+    try:
+        ret = requests.get(url=baidu_url, params = params, timeout=0.5)
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError), arg:
+        print arg
+        return -1
     response = json.loads(ret.text)
 
     if response['status'] != 0 or not response['result'].has_key('routes'):
@@ -179,7 +185,7 @@ def compute(points, basic):
         total = 0
     else:
         total = total / total_c
-
+    print times_drive
     return total, times_drive, times_bus
 
 @app.route('/export', methods=['POST'])
@@ -242,9 +248,11 @@ def batch():
         basic = {'lat': r[0].value, 'lng': r[1].value}
         score, t_drive, t_bus = compute(points, basic)
         ws.append((basic['lat'], basic['lng'], score)+tuple(t_drive)+tuple(t_bus))
+	print (idx+1)/len(st.rows[1:])*100
         sse.publish({"progress": (idx+1)/len(st.rows[1:])*100}, type="report")
-    wb_result.save(filename='./files/'+file_prefix + '_result.xlsx')
-    return flask.jsonify({'file': file_prefix + '_result.xlsx'}), 200
+    file_name = file_prefix + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '.xlsx'
+    wb_result.save(filename='./files/' + file_name)
+    return flask.jsonify({'file': file_name}), 200
 
 @app.route('/save', methods=['POST'])
 @flask_login.login_required
@@ -305,7 +313,9 @@ def get_point():
 @flask_login.login_required
 def download():
     if request.args.has_key('file'):
-        return flask.send_from_directory('files', request.args['file']), 200
+        file_name = request.args['file']
+        return flask.send_from_directory('files', file_name,
+		cache_timeout=1, attachment_filename=file_name, as_attachment=True), 200
     else:
         return 'no file specifid', 400
 
