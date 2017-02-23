@@ -10,6 +10,7 @@ from flask_cors import CORS, cross_origin
 import hashlib
 import json
 import requests
+from datetime import datetime
 from openpyxl import Workbook, load_workbook
 
 app = Flask(__name__)
@@ -145,7 +146,11 @@ def baidu_direction(origin, destination, mode):
         'ak': 'E8k0hkMHteAkrUj9ZXkAARzh'
     }
     baidu_url = 'http://api.map.baidu.com/direction/v1'
-    ret = requests.get(url=baidu_url, params = params)
+    try:
+        ret = requests.get(url=baidu_url, params = params, timeout=0.5)
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError), arg:
+        print arg
+        return -1
     response = json.loads(ret.text)
 
     if response['status'] != 0 or not response['result'].has_key('routes'):
@@ -185,30 +190,11 @@ def compute(points, basic):
 @app.route('/export', methods=['POST'])
 @flask_login.login_required
 def export():
-    #return flask.send_from_directory('files', 'result.xls'), 200
-    data = json.loads(request.form['data'])
-    points = json.loads(data['points'])
-    basic = data['basic']
+    points = json.loads(request.form['points']).items()
+    basic = json.loads(request.form['basic'])
     # compute the total score
-    total = 0
-    total_c = 0
-    for p in points:
-        t = (p['busTime']*p['Ra'] + p['carTime']*p['Rb']) / (p['Ra'] + p['Rb'])
-        total += t * p['Rc']
-        total_c += p['Rc']
-    total = total / total_c
-    # prepare a excel file
-    wb = Workbook()
-    ws = wb.active
-    ws.title = 'result'
-    ws.append(('No.', 'Lat', 'Lng', 'BusTime(m)', 'CarTime(m)', 'Ra', 'Rb', 'Rc'))
-    for p in points:
-        ws.append((p['key'], p['lat'], p['lng'], p['busTime'], \
-        p['carTime'], p['Ra'], p['Rb'], p['Rc']))
-    ws.append(())
-    ws.append(('basic', basic['lat'], basic['lng'], 'total->', total))
-    wb.save(filename="files/result.xlsx")
-    return flask.send_from_directory('files', 'result.xlsx'), 200
+    score, t_drive, t_bus = compute(points, basic)
+    return flask.jsonify({'score': score}), 200
 
 @app.route('/batch', methods=['POST'])
 @flask_login.login_required
@@ -243,8 +229,9 @@ def batch():
         score, t_drive, t_bus = compute(points, basic)
         ws.append((basic['lat'], basic['lng'], score)+tuple(t_drive)+tuple(t_bus))
         sse.publish({"progress": (idx+1)/len(st.rows[1:])*100}, type="report")
-    wb_result.save(filename='./files/'+file_prefix + '_result.xlsx')
-    return flask.jsonify({'file': file_prefix + '_result.xlsx'}), 200
+    file_name = file_prefix + datetime.now().strftime(' %Y-%m-%d %H:%M:%S') + '.xlsx'
+    wb_result.save(filename='./files/' + file_name)
+    return flask.jsonify({'file': file_name}), 200
 
 @app.route('/save', methods=['POST'])
 @flask_login.login_required
@@ -305,7 +292,9 @@ def get_point():
 @flask_login.login_required
 def download():
     if request.args.has_key('file'):
-        return flask.send_from_directory('files', request.args['file']), 200
+        file_name = request.args['file']
+        return flask.send_from_directory('files', file_name,
+            cache_timeout=1, attachment_filename=file_name, as_attachment=True), 200
     else:
         return 'no file specifid', 400
 

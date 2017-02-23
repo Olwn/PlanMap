@@ -53,7 +53,7 @@ var upload_props = {
 
 var PointList = React.createClass({
   getInitialState() {
-    window.map.addEventListener("click", this.addReferPoint);
+    window.map.addEventListener("click", this.addBasicPoint);
     console.log("init");
     var max_idx = -1;
     var fields = {};
@@ -68,9 +68,9 @@ var PointList = React.createClass({
       fields[String(x.idx)] = x;
     });
     return {
-      mode: "1",
+      mode: "2",
       points: fields,
-      basic: null,
+      basic: {lng: null, lat: null},
       max_idx: max_idx,
       data_for_upload: {},
       config_id: -1,
@@ -141,7 +141,8 @@ var PointList = React.createClass({
       rb: 1,
       rc: 1,
       name: '',
-      show: true
+      show: true,
+      score: 0
     };
     this.setState({
       max_idx: new_idx,
@@ -220,6 +221,19 @@ var PointList = React.createClass({
       );
 
   },
+  onClickCompute() {
+    this.prepareData();
+    console.log(this.state.data_for_upload);
+    $.post('/export',
+      {'basic': JSON.stringify(this.state.basic), 'points': JSON.stringify(this.state.data_for_upload)},
+      function(data, status){
+        console.log(data);
+        this.setState({
+          score: data['score']
+        });
+      }.bind(this)
+    );
+  },
   render: function() {
     var keys = [];
     var pointNodes = [];
@@ -246,11 +260,13 @@ var PointList = React.createClass({
     return (
       <div>
         <div>
-          <Select defaultValue="1" style={{ width: 60 }} onChange={this.changeClickListener}>
+          操作模式：
+          <Select defaultValue="2" style={{ width: 60 }} onChange={this.changeClickListener}>
             <Option value="1">参考点</Option>
             <Option value="2">基点</Option>
             <Option value="3">禁用</Option>
           </Select>
+          参考系：
           <Select style={width_style} onChange={renderPoints}>
             {
               this.state.configs.map(function(config){
@@ -258,10 +274,13 @@ var PointList = React.createClass({
               })
             }
           </Select>
-
+          基点<Input value={this.state.basic.lat+", "+this.state.basic.lng} style={{width: 140}}disabled={true}/>
+          <br/>
+          <Button type="primary" onClick={this.onClickCompute}>计算评分</Button>
+          <Input style={width_style} value={this.state.score} />
           <Upload style={width_style} data={{"points": JSON.stringify(this.state.data_for_upload)}} {...upload_props}>
             <Button id="import" type="ghost" onClick={this.prepareData}>
-              <Icon type="upload" />导入
+              <Icon type="upload"/>导入计算
             </Button>
           </Upload>
         </div>
