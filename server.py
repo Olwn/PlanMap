@@ -11,13 +11,16 @@ import hashlib
 import json
 import requests
 from datetime import datetime
+import time
 from openpyxl import Workbook, load_workbook
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 app = Flask(__name__)
 CORS(app)
 app.config["REDIS_URL"] = "redis://localhost:6379"
 app.register_blueprint(sse, url_prefix='/stream')
 app.config['SECRET_KEY'] = "123456789"
+
 # database config
 host = '106.14.63.93'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
@@ -28,6 +31,10 @@ md5 = hashlib.md5()
 # login management
 login_manager = flask_login.LoginManager()
 login_manager.init_app(app)
+
+# running config
+baidu_api_timeout = 2 # seconds
+n_threads = 100
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -135,7 +142,6 @@ def baidu_route(origin, destination, mode):
     pass
 
 def baidu_direction(origin, destination, mode):
-    print "baidu direction %s -> %s" % (origin, destination)
     params={
         'origin': origin,
         'destination': destination,
@@ -148,9 +154,8 @@ def baidu_direction(origin, destination, mode):
     }
     baidu_url = 'http://api.map.baidu.com/direction/v1'
     try:
-        ret = requests.get(url=baidu_url, params = params, timeout=0.5)
+        ret = requests.get(url=baidu_url, params = params, timeout=baidu_api_timeout)
     except (requests.exceptions.Timeout, requests.exceptions.ConnectionError), arg:
-        print arg
         return -1
     response = json.loads(ret.text)
 
@@ -166,7 +171,6 @@ def compute(points, basic):
     start_p = str(basic['lat'])+','+str(basic['lng'])
     total = 0
     total_c = 0
-    batch_size = 50
     times_drive = []
     times_bus = []
     for key, p in points:
@@ -185,8 +189,8 @@ def compute(points, basic):
         total = 0
     else:
         total = total / total_c
-    print times_drive
     return total, times_drive, times_bus
+
 
 @app.route('/export', methods=['POST'])
 @flask_login.login_required
@@ -217,20 +221,52 @@ def batch():
     ws = wb_result.active
     ws.title = 'result'
 
+    # header
     ws.append(('Id', 'Name', 'Lat', 'Lng', 'Ra', 'Rb', 'Rc'))
+    # 参考点
     for key, p in points:
-        ws.append((p['idx'], p['name'], p['lat'], p['lng'], p['ra'], \
-                  p['rb'], p['rc']))
+        ws.append((p['idx'], p['name'], p['lat'], p['lng'], p['ra'], p['rb'], p['rc']))
     ws.append(())
+
+    # header
     ids = [x[0] for x in points]
     ws.append(('lat', 'lng', 'score')+tuple([str(id)+'_drive' for id in ids])
               +tuple([str(id)+'_bus' for id in ids]))
+    
+    n_refer_points = len(points)
+    n_basic_points = st.max_row - 1
+    concurrency_baidu_map = 50
+    time_window = 1 # seconds
+
+    executor = ThreadPoolExecutor(max_workers=n_threads)
+    # submit http requests
+    futures = {}
+    count = 0
     for idx, r in enumerate(st.rows[1:]):
         basic = {'lat': r[0].value, 'lng': r[1].value}
-        score, t_drive, t_bus = compute(points, basic)
-        ws.append((basic['lat'], basic['lng'], score)+tuple(t_drive)+tuple(t_bus))
-	print (idx+1)/len(st.rows[1:])*100
-        sse.publish({"progress": (idx+1)/len(st.rows[1:])*100}, type="report")
+        result_future = executor.submit(compute, points, basic)
+        count += n_refer_points * 2
+        if count > concurrency_baidu_map:
+            time.sleep(time_window)
+            count -= concurrency_baidu_map
+        futures[result_future] = basic
+
+    # wait for results
+    timeout = n_basic_points * n_refer_points * 2 * baidu_api_timeout
+    count = 0
+    for f in as_completed(futures, timeout):
+        basic = futures[f]
+        count += 1
+        try:
+            score, t_drive, t_bus = f.result()
+        except Exception as exc:
+            print('%r generated an exception: %s' % (basic, exc))
+        else:
+            ws.append((basic['lat'], basic['lng'], score)+tuple(t_drive)+tuple(t_bus))
+        print "%d/%d finished" % (count, n_basic_points)
+        sse.publish({"progress": count/n_basic_points*100}, type="report")
+    
+    # save file
     file_name = file_prefix + datetime.now().strftime(' %Y-%m-%d %H:%M:%S') + '.xlsx'
     wb_result.save(filename='./files/' + file_name)
     return flask.jsonify({'file': file_name}), 200
