@@ -235,7 +235,7 @@ def batch():
     
     n_refer_points = len(points)
     n_basic_points = st.max_row - 1
-    concurrency_baidu_map = 50
+    concurrency_baidu_map = 40
     time_window = 1 # seconds
 
     executor = ThreadPoolExecutor(max_workers=n_threads)
