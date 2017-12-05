@@ -33,7 +33,7 @@ login_manager = flask_login.LoginManager()
 login_manager.init_app(app)
 
 # running config
-baidu_api_timeout = 2 # seconds
+baidu_api_timeout = 5 # seconds
 n_threads = 100
 
 class User(db.Model):
@@ -146,11 +146,11 @@ def baidu_direction(origin, destination, mode):
         'origin': origin,
         'destination': destination,
         'mode': mode,
-        'origin_region': '上海',
-        'destination_region': '上海',
+        'origin_region': "上海",
+        'destination_region': "上海",
         'region': '上海',
         'output': 'json',
-        'ak': 'E8k0hkMHteAkrUj9ZXkAARzh'
+        'ak': 'kxreayOyZO9mLxjIOotUVT8F'
     }
     baidu_url = 'http://api.map.baidu.com/direction/v1'
     try:
@@ -158,7 +158,7 @@ def baidu_direction(origin, destination, mode):
     except (requests.exceptions.Timeout, requests.exceptions.ConnectionError), arg:
         return -1
     response = json.loads(ret.text)
-
+    # print response
     if response['status'] != 0 or not response['result'].has_key('routes'):
         return -1
     if mode == 'driving':
@@ -181,6 +181,7 @@ def compute(points, basic):
         times_bus.append(t_bus)
         # print 'driver time: %d, bus time: %d ' % (t_drive, t_bus)
         if t_drive == -1 or t_bus == -1:
+            print "error"
             continue
         t = (t_bus*p['ra'] + t_drive*p['rb']) / (p['ra'] + p['rb'])
         total += t * p['rc']
@@ -235,17 +236,23 @@ def batch():
     
     n_refer_points = len(points)
     n_basic_points = st.max_row - 1
-    concurrency_baidu_map = 40
-    time_window = 1 # seconds
-
+    concurrency_baidu_map = 2000
+    time_window = 60 # seconds
+    one_percent = n_basic_points // 100
+    i = 0
     executor = ThreadPoolExecutor(max_workers=n_threads)
     # submit http requests
     futures = {}
     count = 0
+    count_acc = -1
     for idx, r in enumerate(st.rows[1:]):
         basic = {'lat': r[0].value, 'lng': r[1].value}
         result_future = executor.submit(compute, points, basic)
         count += n_refer_points * 2
+        count_acc += 1
+        if count_acc % one_percent == 0:
+            i += 1
+            sse.publish({"progress": i}, type="report")
         if count > concurrency_baidu_map:
             time.sleep(time_window)
             count -= concurrency_baidu_map
@@ -264,11 +271,11 @@ def batch():
         else:
             ws.append((basic['lat'], basic['lng'], score)+tuple(t_drive)+tuple(t_bus))
         print "%d/%d finished" % (count, n_basic_points)
-        sse.publish({"progress": count/n_basic_points*100}, type="report")
     
     # save file
     file_name = file_prefix + datetime.now().strftime(' %Y-%m-%d %H:%M:%S') + '.xlsx'
     wb_result.save(filename='./files/' + file_name)
+    sse.publish({"progress": 100}, type="report")
     return flask.jsonify({'file': file_name}), 200
 
 @app.route('/save', methods=['POST'])
