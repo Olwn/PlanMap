@@ -236,9 +236,9 @@ def batch():
     
     n_refer_points = len(points)
     n_basic_points = st.max_row - 1
-    concurrency_baidu_map = 2000
-    time_window = 60 # seconds
-    one_percent = n_basic_points // 100
+    concurrency_baidu_map = 200
+    time_window = 2 # seconds
+    one_percent = max(1, n_basic_points // 100)
     i = 0
     executor = ThreadPoolExecutor(max_workers=n_threads)
     # submit http requests
