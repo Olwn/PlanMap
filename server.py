@@ -21,10 +21,13 @@ app.config["REDIS_URL"] = "redis://localhost:6379"
 app.register_blueprint(sse, url_prefix='/stream')
 app.config['SECRET_KEY'] = "123456789"
 
+# baidu api
+baidu_api_key = 'kxreayOyZO9mLxjIOotUVT8F'
+
 # database config
 host = '106.14.63.93'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root:27271992@'+host+':3306/map'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://map:map@'+host+':3306/map'
 db = SQLAlchemy(app)
 md5 = hashlib.md5()
 
@@ -141,16 +144,16 @@ def index():
 def baidu_route(origin, destination, mode):
     pass
 
-def baidu_direction(origin, destination, mode):
+def baidu_direction(origin, destination, mode, city):
     params={
         'origin': origin,
         'destination': destination,
         'mode': mode,
-        'origin_region': "上海",
-        'destination_region': "上海",
-        'region': '上海',
+        'origin_region': city,
+        'destination_region': city,
+        'region': city,
         'output': 'json',
-        'ak': 'kxreayOyZO9mLxjIOotUVT8F'
+        'ak': baidu_api_key
     }
     baidu_url = 'http://api.map.baidu.com/direction/v1'
     try:
@@ -166,17 +169,37 @@ def baidu_direction(origin, destination, mode):
     else:
         return response['result']['routes'][0]['scheme'][0]['duration'] / 60
 
+# get city
+def get_city(lat, lng):
+    params = {
+        'location': "%s,%s" % (lat, lng),
+        'output': 'json',
+        'pois': '1',
+        'ak': baidu_api_key
+    }
+    baidu_url = 'http://api.map.baidu.com/geocoder/v2/'
+    default = "上海市"
+    try:
+        ret = requests.get(url=baidu_url, params = params, timeout=baidu_api_timeout)
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError), arg:
+        return default
+    response = json.loads(ret.text.encode('utf-8'))
+    if response['status'] != 0: return default
+    return response['result']['addressComponent']['city']
+
 # compute the score of point
-def compute(points, basic):
+def compute(points, basic, city=None):
     start_p = str(basic['lat'])+','+str(basic['lng'])
+    if not city:
+        city = get_city(basic['lat'], basic['lng'])
     total = 0
     total_c = 0
     times_drive = []
     times_bus = []
     for key, p in points:
         end_p = str(p['lat']) + ',' + str(p['lng'])
-        t_drive = baidu_direction(start_p, end_p, 'driving')
-        t_bus = baidu_direction(start_p, end_p, 'transit')
+        t_drive = baidu_direction(start_p, end_p, 'driving', city)
+        t_bus = baidu_direction(start_p, end_p, 'transit', city)
         times_drive.append(t_drive)
         times_bus.append(t_bus)
         # print 'driver time: %d, bus time: %d ' % (t_drive, t_bus)
@@ -228,6 +251,15 @@ def batch():
     for key, p in points:
         ws.append((p['idx'], p['name'], p['lat'], p['lng'], p['ra'], p['rb'], p['rc']))
     ws.append(())
+    # get city
+    center_lat = 0.
+    center_lng = 0.
+    for key, p in points:
+        center_lat += p['lat']
+        center_lng += p['lng']
+    center_lat /= len(points)
+    center_lng /= len(points)
+    city = get_city(center_lat, center_lng)
 
     # header
     ids = [x[0] for x in points]
@@ -247,7 +279,7 @@ def batch():
     count_acc = -1
     for idx, r in enumerate(st.rows[1:]):
         basic = {'lat': r[0].value, 'lng': r[1].value}
-        result_future = executor.submit(compute, points, basic)
+        result_future = executor.submit(compute, points, basic, city)
         count += n_refer_points * 2
         count_acc += 1
         if count_acc % one_percent == 0:
